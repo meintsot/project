@@ -1,10 +1,12 @@
 #include "LSH.h"
 #include <algorithm>
+#include <random>
 #include "EuclideanDistance.h"
 
-LSH::LSH(int tables, int functions, Metric* metric1)
-        : numOfHashTables(tables), numOfHashFunctions(functions), metric(metric1) {
+LSH::LSH(int tables, int functions, Metric* metric1, int numberOfProbes, int dim)
+        : numOfHashTables(tables), numOfHashFunctions(functions), metric(metric1), numberOfProbes(numberOfProbes), dimension(dim) {
     generateRandomVectors();
+    hashTables.resize(numOfHashTables);
 }
 
 void LSH::generateRandomVectors() {
@@ -13,11 +15,25 @@ void LSH::generateRandomVectors() {
 
     for (int i = 0; i < numOfHashTables * numOfHashFunctions; ++i) {
         Vector v;
-        for (int j = 0; j < 28 * 28; ++j) {  // Assuming MNIST image size
+        for (int j = 0; j < dimension; ++j) {  // Using the passed dimension
             v.push_back(distribution(generator));
         }
         randomVectors.push_back(v);
     }
+}
+
+std::vector<Vector> LSH::retrieveCandidates(const Vector& point) const {
+    std::vector<Vector> candidates;
+    for (int i = 0; i < numOfHashTables; ++i) {
+        int hashValue = computeHashValue(point, i);
+        for (int j = hashValue; j < hashValue + numberOfProbes && j < (1 << numOfHashFunctions); ++j) {
+            if (hashTables[i].find(j) != hashTables[i].end()) {
+                const auto& bucket = hashTables[i].at(j);
+                candidates.insert(candidates.end(), bucket.begin(), bucket.end());
+            }
+        }
+    }
+    return candidates;
 }
 
 int LSH::computeHashValue(const Vector& point, int tableIndex) const {
@@ -48,9 +64,13 @@ Vector LSH::nearestNeighbor(const Vector& point) const {
     // Find all possible candidate points from the hash tables
     for (int i = 0; i < numOfHashTables; ++i) {
         int hashValue = computeHashValue(point, i);
-        if (hashTables[i].find(hashValue) != hashTables[i].end()) {
-            const auto& bucket = hashTables[i].at(hashValue);
-            candidates.insert(candidates.end(), bucket.begin(), bucket.end());
+
+        // Now, not just the exact hash value bucket, but neighboring buckets as well, based on numberOfProbes
+        for (int j = hashValue; j < hashValue + numberOfProbes && j < (1 << numOfHashFunctions); ++j) {
+            if (hashTables[i].find(j) != hashTables[i].end()) {
+                const auto& bucket = hashTables[i].at(j);
+                candidates.insert(candidates.end(), bucket.begin(), bucket.end());
+            }
         }
     }
 
@@ -73,9 +93,12 @@ std::vector<Vector> LSH::NClosestVectors(const Vector& point, int N) const {
     // Find all possible candidate points from the hash tables
     for (int i = 0; i < numOfHashTables; ++i) {
         int hashValue = computeHashValue(point, i);
-        if (hashTables[i].find(hashValue) != hashTables[i].end()) {
-            const auto& bucket = hashTables[i].at(hashValue);
-            candidates.insert(candidates.end(), bucket.begin(), bucket.end());
+
+        for (int j = hashValue; j < hashValue + numberOfProbes && j < (1 << numOfHashFunctions); ++j) {
+            if (hashTables[i].find(j) != hashTables[i].end()) {
+                const auto& bucket = hashTables[i].at(j);
+                candidates.insert(candidates.end(), bucket.begin(), bucket.end());
+            }
         }
     }
 
@@ -108,9 +131,12 @@ std::vector<Vector> LSH::rangeSearch(const Vector& point, double range) const {
     // Find all possible candidate points from the hash tables
     for (int i = 0; i < numOfHashTables; ++i) {
         int hashValue = computeHashValue(point, i);
-        if (hashTables[i].find(hashValue) != hashTables[i].end()) {
-            const auto& bucket = hashTables[i].at(hashValue);
-            candidates.insert(candidates.end(), bucket.begin(), bucket.end());
+
+        for (int j = hashValue; j < hashValue + numberOfProbes && j < (1 << numOfHashFunctions); ++j) {
+            if (hashTables[i].find(j) != hashTables[i].end()) {
+                const auto& bucket = hashTables[i].at(j);
+                candidates.insert(candidates.end(), bucket.begin(), bucket.end());
+            }
         }
     }
 

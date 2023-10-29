@@ -1,8 +1,11 @@
 #include "Hypercube.h"
 #include <algorithm>
+#include <limits>
+#include <utility>
+#include <random>
 
-Hypercube::Hypercube(int functions, Metric* metric1)
-        : numOfHashFunctions(functions), metric(metric1) {
+Hypercube::Hypercube(int functions, Metric* metricInstance, int max_number_M_hypercube, int dim)
+        : numOfHashFunctions(functions), metric(metricInstance), max_number_M_hypercube(max_number_M_hypercube), dimension(dim) {
     generateRandomVectors();
 }
 
@@ -12,7 +15,7 @@ void Hypercube::generateRandomVectors() {
 
     for (int i = 0; i < numOfHashFunctions; ++i) {
         Vector v;
-        for (int j = 0; j < 28 * 28; ++j) {  // Assuming MNIST image size
+        for (int j = 0; j < dimension; ++j) {
             v.push_back(distribution(generator));
         }
         randomVectors.push_back(v);
@@ -38,24 +41,16 @@ void Hypercube::build(const std::vector<Vector>& dataset) {
 Vector Hypercube::nearestNeighbor(const Vector& point) const {
     std::string code = computeBinaryCode(point);
 
-    // Start with candidates from the current cell
+    std::vector<std::string> allNeighborCodes = getNeighbors(code, max_number_M_hypercube);
     std::vector<Vector> allCandidates;
-    if (hypercubeCells.find(code) != hypercubeCells.end()) {
-        allCandidates = hypercubeCells.at(code);
-    }
 
-    // Get neighboring cells' candidates
-    for (size_t i = 0; i < code.size(); ++i) {
-        std::string neighborCode = code;
-        neighborCode[i] = (neighborCode[i] == '0') ? '1' : '0'; // Flip the bit to get neighbor
-
+    for (const auto& neighborCode : allNeighborCodes) {
         if (hypercubeCells.find(neighborCode) != hypercubeCells.end()) {
             const auto& neighborCandidates = hypercubeCells.at(neighborCode);
             allCandidates.insert(allCandidates.end(), neighborCandidates.begin(), neighborCandidates.end());
         }
     }
 
-    // Find the nearest among all candidates
     double minDist = std::numeric_limits<double>::max();
     Vector nearest;
     for (const auto& candidate : allCandidates) {
@@ -72,20 +67,16 @@ Vector Hypercube::nearestNeighbor(const Vector& point) const {
 std::vector<Vector> Hypercube::NClosestVectors(const Vector& point, int N) const {
     std::string code = computeBinaryCode(point);
 
-    std::vector<Vector> allCandidates = hypercubeCells.at(code);
+    std::vector<std::string> allNeighborCodes = getNeighbors(code, max_number_M_hypercube);
+    std::vector<Vector> allCandidates;
 
-    // Get neighboring cells' candidates
-    for (size_t i = 0; i < code.size(); ++i) {
-        std::string neighborCode = code;
-        neighborCode[i] = (neighborCode[i] == '0') ? '1' : '0'; // Flip the bit to get neighbor
-
+    for (const auto& neighborCode : allNeighborCodes) {
         if (hypercubeCells.find(neighborCode) != hypercubeCells.end()) {
             const auto& neighborCandidates = hypercubeCells.at(neighborCode);
             allCandidates.insert(allCandidates.end(), neighborCandidates.begin(), neighborCandidates.end());
         }
     }
 
-    // Compute distances and sort
     std::vector<std::pair<double, Vector>> distanceAndCandidates;
     for (const auto& candidate : allCandidates) {
         double dist = metric->calculate(point, candidate);
@@ -111,13 +102,10 @@ std::vector<Vector> Hypercube::NClosestVectors(const Vector& point, int N) const
 std::vector<Vector> Hypercube::rangeSearch(const Vector& point, double range) const {
     std::string code = computeBinaryCode(point);
 
-    std::vector<Vector> allCandidates = hypercubeCells.at(code);
+    std::vector<std::string> allNeighborCodes = getNeighbors(code, max_number_M_hypercube);
+    std::vector<Vector> allCandidates;
 
-    // Get neighboring cells' candidates
-    for (size_t i = 0; i < code.size(); ++i) {
-        std::string neighborCode = code;
-        neighborCode[i] = (neighborCode[i] == '0') ? '1' : '0'; // Flip the bit to get neighbor
-
+    for (const auto& neighborCode : allNeighborCodes) {
         if (hypercubeCells.find(neighborCode) != hypercubeCells.end()) {
             const auto& neighborCandidates = hypercubeCells.at(neighborCode);
             allCandidates.insert(allCandidates.end(), neighborCandidates.begin(), neighborCandidates.end());
@@ -132,4 +120,23 @@ std::vector<Vector> Hypercube::rangeSearch(const Vector& point, double range) co
     }
 
     return result;
+}
+
+std::vector<std::string> Hypercube::getNeighbors(const std::string& code, int distance) const {
+    std::vector<std::string> neighbors;
+
+    if (distance == 0) {
+        neighbors.push_back(code);
+        return neighbors;
+    }
+
+    for (size_t i = 0; i < code.size(); ++i) {
+        std::string mutatedCode = code;
+        mutatedCode[i] = (mutatedCode[i] == '0') ? '1' : '0';
+
+        std::vector<std::string> deeperNeighbors = getNeighbors(mutatedCode, distance - 1);
+        neighbors.insert(neighbors.end(), deeperNeighbors.begin(), deeperNeighbors.end());
+    }
+
+    return neighbors;
 }
